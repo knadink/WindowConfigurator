@@ -1,5 +1,6 @@
 let i18nStrings = {};
 const touchedFields = {};
+let isPrintLayoutMode = false;
 
 document.addEventListener("DOMContentLoaded", () => {
     
@@ -11,6 +12,14 @@ document.addEventListener("DOMContentLoaded", () => {
         });
     }
     InitProfileSystemControls();
+    window.addEventListener("beforeprint", () => {
+        isPrintLayoutMode = true;
+        DrawWindow();
+    });
+    window.addEventListener("afterprint", () => {
+        isPrintLayoutMode = false;
+        DrawWindow();
+    });
 
     // Window witdh
     const focusWidth = document.getElementById('width');
@@ -21,7 +30,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         focusWidth.addEventListener("blur", () => {
             MarkFieldTouched("width");
-            UpdateWindow();
+            HandleDimensionBlurValidation();
         });
     }
     
@@ -33,7 +42,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         focusHeight.addEventListener("blur", () => {
             MarkFieldTouched("height");
-            UpdateWindow();
+            HandleDimensionBlurValidation();
         });
     }
 
@@ -45,7 +54,7 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         focusCntBays.addEventListener("blur", () => {
             MarkFieldTouched("cnt_bays");
-            UpdateWindow();
+            HandleDimensionBlurValidation();
         });
     }
 
@@ -56,6 +65,8 @@ document.addEventListener("DOMContentLoaded", () => {
             const locked = focusIBays.checked;
             document.getElementById("identicalBayWidth").classList.toggle("hidden", locked);
             document.getElementById("identicalBayHeight").classList.toggle("hidden", locked);
+            document.getElementById("bayWidthError").classList.toggle("hidden", locked);
+            document.getElementById("bayHeightError").classList.toggle("hidden", locked);
             UpdateWindow();
         });
     }
@@ -109,14 +120,15 @@ document.addEventListener("DOMContentLoaded", () => {
     if (bayHeightInput) {
         bayHeightInput.addEventListener("input", e => {
             if (windowModel.selectedBay === null) return;
-            const selectedBay = windowModel.bays[windowModel.selectedBay];
-            const selectedProfile = selectedBay ? GetBayStructureProfile(selectedBay.opening) : {sashOverlap: profile.sashOverlap};
+            const selectedBay  = windowModel.bays[windowModel.selectedBay];
+            const selectedProfile = selectedBay ? GetBayStructureProfile(selectedBay.opening) : GetBayStructureProfile("fixed");
             const maxBayHeight = windowModel.height - profile.outerFrame.top - profile.outerFrame.bottom + 2 * selectedProfile.sashOverlap;
-            const newHeight = Number(e.target.value);
+            const newHeight    = Number(e.target.value);
             if (Number.isNaN(newHeight) || newHeight <= 0) return;
 
             windowModel.bays[windowModel.selectedBay].height = Math.min(newHeight, maxBayHeight);
-            e.target.value = Math.round(windowModel.bays[windowModel.selectedBay].height);
+            //e.target.value = Math.round(windowModel.bays[windowModel.selectedBay].height);
+            e.target.value = windowModel.bays[windowModel.selectedBay].height;
             RecalcBays();
             DrawWindow();
             ValidateBayConstraints();
@@ -209,16 +221,6 @@ function init() {
     navigator.serviceWorker.register("sw.js").catch(err => console.error("SW registration failed:", err));
 }*/
 
-// Profile settings
-const profile = {
-    outerFrame: {left: 70, right: 70, top: 70, bottom: 70},
-    bayFrame:   {left: 50, right: 50, top: 50, bottom: 50},
-    verticalMullion:   50,
-    horizontalMullion: 50,
-    sashOverlap:       15,  // sash overlaps outer frame / mullion
-    glassInset:        12   // glass inset inside sash
-};
-
 const cadTheme = {
     background:     "#0e1420",
     frameMain:      "#d9e3f0",
@@ -238,32 +240,6 @@ const openingDirectionOptions = {
     hopper:    ["bottom_to_top", "top_to_bottom"],
     transom:   ["top_to_bottom", "bottom_to_top"],
     sliding:   ["left_to_right", "right_to_left"]
-};
-
-const openingStructureProfiles = {
-    fixed:     {verticalMullion: 50, horizontalMullion: 50, sashOverlap: 10, glassInset: 10},
-    casement:  {verticalMullion: 52, horizontalMullion: 50, sashOverlap: 15, glassInset: 12},
-    tilt_turn: {verticalMullion: 54, horizontalMullion: 52, sashOverlap: 16, glassInset: 12},
-    hopper:    {verticalMullion: 48, horizontalMullion: 50, sashOverlap: 14, glassInset: 11},
-    transom:   {verticalMullion: 48, horizontalMullion: 50, sashOverlap: 12, glassInset: 10},
-    sliding:   {verticalMullion: 44, horizontalMullion: 48, sashOverlap: 8,  glassInset: 14}
-};
-
-const validationRules = {
-    window:  {minWidth: 700, maxWidth: 7000, minHeight: 700, maxHeight: 3200, minCntBays: 1, maxCntBays: 8},
-    mullion: {min: 30, max: 120},
-    opening: {
-        fixed:     {minWidth: 300, maxWidth: 2200, minHeight: 300, maxHeight: 2600},
-        casement:  {minWidth: 450, maxWidth: 1000, minHeight: 700, maxHeight: 2400},
-        tilt_turn: {minWidth: 500, maxWidth: 1100, minHeight: 800, maxHeight: 2500},
-        hopper:    {minWidth: 450, maxWidth: 1800, minHeight: 350, maxHeight: 1300},
-        transom:   {minWidth: 450, maxWidth: 2000, minHeight: 300, maxHeight: 1100},
-        sliding:   {minWidth: 700, maxWidth: 2600, minHeight: 700, maxHeight: 2600}
-    },
-    glassSafety: {
-        fixed:    {maxEdge: 2200, maxAreaM2: 4.0},
-        operable: {maxEdge: 1600, maxAreaM2: 2.5}
-    }
 };
 
 const profileSystemCatalog = {
@@ -424,16 +400,39 @@ const profileSystemCatalog = {
     }
 };
 
-function CloneDeep(obj) {
-    return JSON.parse(JSON.stringify(obj));
+const defaultManufacturerId = Object.keys(profileSystemCatalog)[0];
+const defaultSeriesId = Object.keys(profileSystemCatalog[defaultManufacturerId].series)[0];
+let activeProfileSelection = {
+    manufacturerId: defaultManufacturerId,
+    seriesId: defaultSeriesId
+};
+
+function GetSeriesConfig(manufacturerId, seriesId) {
+    return profileSystemCatalog[manufacturerId]?.series?.[seriesId] || null;
 }
 
-function ReplaceObject(target, source) {
-    Object.keys(target).forEach(key => delete target[key]);
-    Object.entries(source).forEach(([key, value]) => {
-        target[key] = (value && typeof value === "object") ? CloneDeep(value) : value;
-    });
+function GetActiveSeriesConfig() {
+    const active = GetSeriesConfig(activeProfileSelection.manufacturerId, activeProfileSelection.seriesId);
+    return active || profileSystemCatalog[defaultManufacturerId].series[defaultSeriesId];
 }
+
+const profile = new Proxy({}, {
+    get(_, prop) {
+        return GetActiveSeriesConfig().profile[prop];
+    }
+});
+
+const openingStructureProfiles = new Proxy({}, {
+    get(_, prop) {
+        return GetActiveSeriesConfig().openingStructureProfiles[prop];
+    }
+});
+
+const validationRules = new Proxy({}, {
+    get(_, prop) {
+        return GetActiveSeriesConfig().validationRules[prop];
+    }
+});
 
 function GetManufacturerIds() {
     return Object.keys(profileSystemCatalog);
@@ -496,12 +495,10 @@ function PopulateSeriesOptions(manufacturerId) {
 }
 
 function ApplyProfileSystem(manufacturerId, seriesId) {
-    const series = profileSystemCatalog[manufacturerId]?.series?.[seriesId];
+    const series = GetSeriesConfig(manufacturerId, seriesId);
     if (!series) return;
 
-    ReplaceObject(profile, series.profile);
-    ReplaceObject(openingStructureProfiles, series.openingStructureProfiles);
-    ReplaceObject(validationRules, series.validationRules);
+    activeProfileSelection = {manufacturerId, seriesId};
 
     localStorage.setItem("profileManufacturer", manufacturerId);
     localStorage.setItem("profileSeries", seriesId);
@@ -611,22 +608,24 @@ function GetGlassSafetyLimit(opening) {
 }
 
 function GetBayStructureProfile(opening) {
-    const override = openingStructureProfiles[opening] || {};
+    const baseProfile = openingStructureProfiles.fixed || {};
+    const override = openingStructureProfiles[opening] || baseProfile;
     return {
-        verticalMullion:   override.verticalMullion ?? profile.verticalMullion,
-        horizontalMullion: override.horizontalMullion ?? profile.horizontalMullion,
-        sashOverlap:       override.sashOverlap ?? profile.sashOverlap,
-        glassInset:        override.glassInset ?? profile.glassInset
+        verticalMullion:   override.verticalMullion ?? baseProfile.verticalMullion ?? 0,
+        horizontalMullion: override.horizontalMullion ?? baseProfile.horizontalMullion ?? 0,
+        sashOverlap:       override.sashOverlap ?? baseProfile.sashOverlap ?? 0,
+        glassInset:        override.glassInset ?? baseProfile.glassInset ?? 0
     };
 }
 
 function GetInterBayMullionWidth(index) {
     const left  = windowModel.bays[index];
     const right = windowModel.bays[index + 1];
-    if (!left || !right) return profile.verticalMullion;
+    if (!left || !right) return GetBayStructureProfile("fixed").verticalMullion;
     const lp = GetBayStructureProfile(left.opening);
     const rp = GetBayStructureProfile(right.opening);
-    return Math.round((lp.verticalMullion + rp.verticalMullion) / 2);
+    //return Math.round((lp.verticalMullion + rp.verticalMullion) / 2);
+    return (lp.verticalMullion + rp.verticalMullion) / 2;
 }
 
 function GetTotalMullionWidth() {
@@ -670,6 +669,14 @@ function ParseNumberInput(inputId) {
 
 function MarkFieldTouched(inputId) {
     touchedFields[inputId] = true;
+}
+
+function HandleDimensionBlurValidation() {
+    GetDimensions();
+    const hasValidDimensions = ValidateDimensions();
+    if (hasValidDimensions && windowModel.selectedBay !== null) {
+        ValidateBayConstraints();
+    }
 }
 
 function ShouldShowFieldError(inputId) {
@@ -738,7 +745,7 @@ function ValidateBayConstraints() {
 
     const limits = GetOpeningLimits(bay.opening);
     const profileByOpening = GetBayStructureProfile(bay.opening);
-    const bayWidthTouched = ShouldShowFieldError("bayWidth");
+    const bayWidthTouched  = ShouldShowFieldError("bayWidth");
     const bayHeightTouched = ShouldShowFieldError("bayHeight");
 
     if (bay.width < limits.minWidth) {
@@ -820,11 +827,14 @@ function ValidateBayConstraints() {
 
 function SyncronizeBays() {
 
-    const cnt    = windowModel.cntBays;
-    const width  = windowModel.width - profile.outerFrame.left - profile.outerFrame.right;
-    const height = windowModel.height - profile.outerFrame.top - profile.outerFrame.bottom;
+    const cnt      = windowModel.cntBays;
+    const width    = windowModel.width  - profile.outerFrame.left - profile.outerFrame.right;
+    const height   = windowModel.height - profile.outerFrame.top  - profile.outerFrame.bottom;
     const oldBays  = windowModel.bays;
     const tempBays = [];
+    
+    //console.log(`[SyncronizeBays] profile.outerFrame: left=${profile.outerFrame.left}, right=${profile.outerFrame.right}, top=${profile.outerFrame.top}, bottom=${profile.outerFrame.bottom}`);
+    
     for (let i = 0; i < cnt; i++) {
         const prev = oldBays[i];
         tempBays.push({
@@ -835,23 +845,24 @@ function SyncronizeBays() {
     windowModel.bays = tempBays;
 
     const totalMullions = GetTotalMullionWidth();
-    const totalOverlap = GetTotalOverlapAllowance();
+    const totalOverlap  = GetTotalOverlapAllowance();
     const bayWidth  = (width - totalMullions + totalOverlap) / cnt;
-    const bayHeight = height + 2 * profile.sashOverlap;
 
-    let currentX = profile.outerFrame.left - profile.sashOverlap;
+    const firstOpeningProfile = GetBayStructureProfile(tempBays[0]?.opening || "fixed");
+    let currentX = profile.outerFrame.left - firstOpeningProfile.sashOverlap;
 
     windowModel.bays = [];
 
     for (let i = 0; i < windowModel.cntBays; i++) {
 
         const bay = {};
+        const openingProfile = GetBayStructureProfile(tempBays[i].opening);
 
         // Bay Outer Frame
         bay.x = currentX;
-        bay.y = profile.outerFrame.top - profile.sashOverlap;
+        bay.y = profile.outerFrame.top - openingProfile.sashOverlap;
         bay.width  = bayWidth;
-        bay.height = bayHeight;
+        bay.height = height + 2 * openingProfile.sashOverlap;
         bay.opening = tempBays[i].opening;
         bay.openingDirection = tempBays[i].openingDirection;
 
@@ -862,13 +873,13 @@ function SyncronizeBays() {
         };
 
         // Sash (overlaps outward)
-        const overlap = profile.sashOverlap;
+        const overlap = openingProfile.sashOverlap;
         bay.sash = {x: bay.x + overlap, y: bay.y + overlap,
             width: bay.width - 2 * overlap, height: bay.height - 2 * overlap
         };
 
         // Glass (inside sash)
-        const inset = profile.glassInset;
+        const inset = openingProfile.glassInset;
         bay.glassInset = {
             x: bay.frame.x - inset, y: bay.frame.y - inset,
             width:  bay.width  - profile.bayFrame.left - profile.bayFrame.right  + 2 * inset,
@@ -883,8 +894,14 @@ function SyncronizeBays() {
         };
 
         windowModel.bays.push(bay);
+        //console.log(`[SyncronizeBays] bay ${i + 1}: x=${bay.x}, y=${bay.y}, width=${bay.width}, height=${bay.height}`);
 
-        currentX += bayWidth + profile.verticalMullion - 2 * overlap;
+        if (i < windowModel.cntBays - 1) {
+            const nextProfile = GetBayStructureProfile(tempBays[i + 1].opening);
+            //const interMullion = Math.round((openingProfile.verticalMullion + nextProfile.verticalMullion) / 2);
+            const interMullion = (openingProfile.verticalMullion + nextProfile.verticalMullion) / 2;
+            currentX += bayWidth + interMullion - (overlap + nextProfile.sashOverlap);
+        }
     }
 
     RecalcBays();
@@ -895,20 +912,40 @@ function DrawWindow() {
     const dimOffset     = 150;
     const labelOffset   = 50;
     const dimStroke     = 3;
-    const arrowHeadSize = 7;
+    const arrowHeadSize = 12;
     const addASHeight   = 50;
 
     const uniqueHeights = [...new Set(windowModel.bays.map(bay => bay.height))].sort((a, b) => a - b);
-    const rightPad = (uniqueHeights.length + 2) * (dimOffset + labelOffset);
-    const padX = dimOffset + 2 * labelOffset;
-    const padY = dimOffset + 2 * labelOffset;
+    const rightRequiredPad = (uniqueHeights.length + 2) * (dimOffset + labelOffset);
+    const topRequiredPad = dimOffset + 2 * labelOffset + (isPrintLayoutMode ? 80 : 0);
+
+    let padLeft;
+    let padRight;
+    let padTop;
+    let padBottom;
+    if (isPrintLayoutMode) {
+        padLeft = 80;
+        padRight = rightRequiredPad;
+        padTop = topRequiredPad;
+        padBottom = 80;
+    } else {
+        const horizontalPad = Math.max(40, rightRequiredPad);
+        const verticalPad = topRequiredPad;
+        padLeft = horizontalPad;
+        padRight = horizontalPad;
+        padTop = verticalPad;
+        padBottom = verticalPad;
+    }
 
     const drawingDiv = document.getElementById("drawing");
     document.getElementById("drawing").classList.add("active");
     drawingDiv.style.display = "block";
 
     const svg = document.getElementById("windowSvg");
-    svg.setAttribute("viewBox", `0 ${-padY} ${windowModel.width + padX} ${windowModel.height + padY}`);
+    svg.setAttribute(
+        "viewBox",
+        `${-padLeft} ${-padTop} ${windowModel.width + padLeft + padRight} ${windowModel.height + padTop + padBottom}`
+    );
     svg.style.width  = "100%";
     svg.style.height = "100%";
     svg.style.background = cadTheme.background;
@@ -920,10 +957,10 @@ function DrawWindow() {
     EnsureCadDefs(svg, NS);
     const drawingGroup = CreateNewElement(NS, svg, "g", {id: "drawingGroup"});
     CreateNewElement(NS, drawingGroup, "rect", {class: "cadGridBackground",
-        x: 0,
-        y: -padY,
-        width: windowModel.width + rightPad,
-        height: windowModel.height + padY,
+        x: -padLeft,
+        y: -padTop,
+        width: windowModel.width + padLeft + padRight,
+        height: windowModel.height + padTop + padBottom,
         fill: "url(#cadGridMajor)"
     });
 
@@ -937,46 +974,46 @@ function DrawWindow() {
         x: profile.outerFrame.left, y: profile.outerFrame.top,
         width: (windowModel.width - profile.outerFrame.left - profile.outerFrame.right),
         height: (windowModel.height - profile.outerFrame.top - profile.outerFrame.bottom),
-        fill: "none", stroke: cadTheme.frameSecondary, "stroke-width": "10"
+        fill: "none", stroke: cadTheme.frameSecondary, "stroke-width": "4"
     });
     // Mullions
     windowModel.bays.forEach((bay, index) => {
         if (index === 0) return;
         const interIndex = index - 1;
         const mullionWidth = GetInterBayMullionWidth(interIndex);
-        const rightOverlap = GetBayStructureProfile(bay.opening).sashOverlap;
-        const mullionX = bay.x + rightOverlap - mullionWidth;
+        const rightProfile = GetBayStructureProfile(bay.opening);
+        const mullionX = bay.x + rightProfile.sashOverlap - mullionWidth;
         const openingY = profile.outerFrame.top;
         const openingHeight = windowModel.height - profile.outerFrame.top - profile.outerFrame.bottom;
         CreateNewElement(NS, drawingGroup, "rect", {class: "mullion",
             x: mullionX, y: openingY,
             width: mullionWidth, height: openingHeight,
-            fill: "none", stroke: cadTheme.mullion, "stroke-width": "8"});
+            fill: "none", stroke: cadTheme.mullion, "stroke-width": "4"});
     });
     // Bay Outer Frame
-    windowModel.bays.forEach(bay => {
+    windowModel.bays.forEach((bay, index) => {
         CreateNewElement(NS, drawingGroup, "rect", {class: "bay",
             x: bay.x, y: bay.y,
             width: bay.width, height: bay.height,
-            fill: "none", stroke: cadTheme.frameSecondary, "stroke-width": 8});
+            fill: "none", stroke: cadTheme.frameMain, "stroke-width": 10});
     });
-    // Bay Inner Frame
-    windowModel.bays.forEach(bay => {
-        CreateNewElement(NS, drawingGroup, "rect", {class: "bay",
-            x: bay.frame.x, y: bay.frame.y,
-            width: bay.frame.width, height: bay.frame.height,
-            fill: "none", stroke: cadTheme.frameSecondary, "stroke-width": 6});
-    });
+    // Bay Inner Frame (optional secondary line):
+    // windowModel.bays.forEach(bay => {
+    //     CreateNewElement(NS, drawingGroup, "rect", {class: "bay",
+    //         x: bay.frame.x, y: bay.frame.y,
+    //         width: bay.frame.width, height: bay.frame.height,
+    //         fill: "none", stroke: cadTheme.frameMain, "stroke-width": 10});
+    // });
     // Bay Sash
     windowModel.bays.forEach(bay => {
         CreateNewElement(NS, drawingGroup, "rect", {class: "baySash",
             x: bay.sash.x, y: bay.sash.y,
             width: bay.sash.width, height: bay.sash.height,
-            fill: "none", stroke: cadTheme.frameMain, "stroke-width": 4});
+            fill: "none", stroke: cadTheme.frameSecondary, "stroke-width": 2});
     });
     // Glass inset
     windowModel.bays.forEach(bay => {
-        CreateNewElement(NS, drawingGroup, "rect", {class: "glass",
+        CreateNewElement(NS, drawingGroup, "rect", {class: "glassInset",
             x: bay.glassInset.x, y: bay.glassInset.y,
             width: bay.glassInset.width, height: bay.glassInset.height,
             fill: "none", stroke: cadTheme.glassStroke, "stroke-width": 3});
@@ -987,8 +1024,8 @@ function DrawWindow() {
            x: bay.glass.x, y: bay.glass.y,
             width: bay.glass.width, height: bay.glass.height,
             fill: cadTheme.glassFill,
-            stroke: windowModel.selectedBay === index ? cadTheme.selected : cadTheme.glassStroke,
-            "stroke-width": windowModel.selectedBay === index ? 10 : 6,
+            stroke: windowModel.selectedBay === index ? cadTheme.selected : cadTheme.frameMain,
+            "stroke-width": windowModel.selectedBay === index ? 12 : 10,
             cursor: "pointer"}).addEventListener("click", () => SelectBay(index))
 
         DrawOpeningSymbol(NS, drawingGroup, bay);
@@ -1051,6 +1088,18 @@ function DrawWindow() {
     RenderSpecification();
 }
 
+function PrintWindow() {
+    isPrintLayoutMode = true;
+    DrawWindow();
+    setTimeout(() => {
+        window.print();
+        setTimeout(() => {
+            isPrintLayoutMode = false;
+            DrawWindow();
+        }, 0);
+    }, 0);
+}
+
 function CreateNewElement(NS, parent, name, attributes = {}, textContent = null) {
     const el = document.createElementNS(NS, name);
     for (const [attr, value] of Object.entries(attributes)) { el.setAttribute(attr, value); }
@@ -1062,7 +1111,7 @@ function CreateNewElement(NS, parent, name, attributes = {}, textContent = null)
 function CreateArrow(NS, parent, direction, x1, y1, x2, y2, x, y, label) {
     const stroke = cadTheme.dimension;
     const strokeWidth = 4;
-    const fontSize = 32;
+    const fontSize = 70;
     const fill = cadTheme.dimension;
 
     CreateNewElement(NS, parent, "line", { x1: x1, y1: y1, x2: x2, y2: y2,
@@ -1082,8 +1131,8 @@ function SelectBay(index) {
     windowModel.selectedBay = index;
     showBayControls();
     RecalcBays();
-            DrawWindow();
-            ValidateBayConstraints();
+    DrawWindow();
+    ValidateBayConstraints();
 }
 
 function showBayControls() {
@@ -1098,6 +1147,8 @@ function showBayControls() {
     const locked = document.getElementById("identical_bays").checked;
     document.getElementById("identicalBayWidth").classList.toggle("hidden",  locked);
     document.getElementById("identicalBayHeight").classList.toggle("hidden", locked);
+    document.getElementById("bayWidthError").classList.toggle("hidden", locked);
+    document.getElementById("bayHeightError").classList.toggle("hidden", locked);
     ValidateBayConstraints();
     //console.log("width x1: ", x1);
 }
@@ -1116,6 +1167,10 @@ function RecalcBays() {
         // Bay Outer Frame
         bay.x = currentX;
         bay.y = profile.outerFrame.top - bayProfile.sashOverlap;
+        if (i === windowModel.bays.length - 1) {
+            const targetRight = windowModel.width - profile.outerFrame.right + bayProfile.sashOverlap;
+            bay.width = Math.max(0, targetRight - bay.x);
+        }
         // Bay Inner Frame
         bay.frame = {x: bay.x + profile.bayFrame.left, y: bay.y + profile.bayFrame.top,
             width:  bay.width  - profile.bayFrame.left - profile.bayFrame.right,
@@ -1241,29 +1296,46 @@ function RenderSpecification() {
     if (!tbody) return;
     tbody.innerHTML = "";
 
+    const hasVerticalMullion = windowModel.bays.length > 1 &&
+        windowModel.bays.some(bay => GetBayStructureProfile(bay.opening).verticalMullion > 0);
+    // Current model has no horizontal split members; keep this conditional for future extension.
+    const hasHorizontalMullion = windowModel.bays.some(bay => bay.hasHorizontalMullion === true);
+
     windowModel.bays.forEach((bay, index) => {
         const profileByOpening = GetBayStructureProfile(bay.opening);
         const row = document.createElement("tr");
 
         const directionText = bay.openingDirection ? translate(bay.openingDirection) : "—";
-        const values = [
-            String(index + 1),
-            translate(bay.opening),
-            directionText,
-            String(Math.round(bay.width)),
-            String(Math.round(bay.height)),
-            String(profileByOpening.verticalMullion),
-            String(profileByOpening.horizontalMullion),
-            String(profileByOpening.sashOverlap),
-            String(profileByOpening.glassInset)
+        const windowFrameSpec = `${profile.outerFrame.left}/${profile.outerFrame.right}/${profile.outerFrame.top}/${profile.outerFrame.bottom}`;
+        const bayFrameSpec = `${profile.bayFrame.left}/${profile.bayFrame.right}/${profile.bayFrame.top}/${profile.bayFrame.bottom}`;
+        const columns = [
+            {key: "bay",               value: String(index + 1),                          className: "spec-col-tight"},
+            {key: "opening",           value: translate(bay.opening),                     className: "spec-col-tight"},
+            {key: "direction",         value: directionText,                              className: "spec-col-tight"},
+            {key: "width",             value: String(Math.round(bay.width)),              className: "spec-col-tight"},
+            {key: "height",            value: String(Math.round(bay.height)),             className: "spec-col-tight"},
+            {key: "windowFrame",       value: windowFrameSpec},
+            {key: "bayFrame",          value: bayFrameSpec},
+            {key: "verticalMullion",   value: String(profileByOpening.verticalMullion),   className: "spec-col-vertical-mullion"},
+            {key: "horizontalMullion", value: String(profileByOpening.horizontalMullion), className: "spec-col-horizontal-mullion"},
+            {key: "sashOverlap",       value: String(profileByOpening.sashOverlap)},
+            {key: "glassInset",        value: String(profileByOpening.glassInset)}
         ];
 
-        values.forEach(value => {
+        columns.forEach(({value, className}) => {
             const cell = document.createElement("td");
             cell.textContent = value;
+            if (className) cell.classList.add(className);
             row.appendChild(cell);
         });
 
         tbody.appendChild(row);
+    });
+
+    document.querySelectorAll(".spec-col-vertical-mullion").forEach(el => {
+        el.classList.toggle("hidden", !hasVerticalMullion);
+    });
+    document.querySelectorAll(".spec-col-horizontal-mullion").forEach(el => {
+        el.classList.toggle("hidden", !hasHorizontalMullion);
     });
 }
