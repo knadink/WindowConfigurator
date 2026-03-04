@@ -79,6 +79,7 @@
 
         </fieldset>
 
+        <!-- Drawing -->
         <div class="designer">
             <div id="drawing">
                 <svg id="windowSvg"
@@ -102,6 +103,7 @@
                 </svg>
             </div>
 
+            <!-- Selected Bay Controls -->>
             <div id="bayControls" hidden>
                 <fieldset class="bay-controls-fieldset">
                     <legend data-i18n="bay_controls"></legend>
@@ -138,18 +140,27 @@
             </div>
         </div>
 
+        <!-- Specification Table -->>
         <fieldset id="specification" class="specification">
             <legend data-i18n="specification"></legend>
             <table id="specTable">
                 <thead>
                     <tr>
-                        <th data-i18n="bay"></th>
-                        <th data-i18n="opening"></th>
-                        <th data-i18n="direction"></th>
-                        <th data-i18n="width"></th>
-                        <th data-i18n="height"></th>
-                        <th data-i18n="verticalMullion"></th>
-                        <th data-i18n="horizontalMullion"></th>
+                        <th class="spec-col-tight" data-i18n="bay"></th>
+                        <th class="spec-col-tight" data-i18n="opening"></th>
+                        <th class="spec-col-tight" data-i18n="direction"></th>
+                        <th class="spec-col-tight" data-i18n="width"></th>
+                        <th class="spec-col-tight" data-i18n="height"></th>
+                        <th>
+                            <span data-i18n="windowFrameThicknessSpec"></span>
+                            <span class="spec-subhead">L/R/T/B (mm)</span>
+                        </th>
+                        <th>
+                            <span data-i18n="bayFrameThicknessSpec"></span>
+                            <span class="spec-subhead">L/R/T/B (mm)</span>
+                        </th>
+                        <th class="spec-col-vertical-mullion" data-i18n="verticalMullion"></th>
+                        <th class="spec-col-horizontal-mullion" data-i18n="horizontalMullion"></th>
                         <th data-i18n="sashOverlap"></th>
                         <th data-i18n="glassInset"></th>
                     </tr>
@@ -158,7 +169,8 @@
             </table>
         </fieldset>
 
-        <button type="button" onclick="window.print()" data-i18n="print"></button>
+        <!-- Printing -->>
+        <button type="button" onclick="PrintWindow()" data-i18n="print"></button>
 
     </form>
 
