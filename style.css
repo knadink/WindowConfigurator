@@ -145,6 +145,7 @@ html:not(.preview-desktop) .radio-group{grid-template-columns:1fr;}
 @media(max-width:500px){
 html:not(.preview-desktop) .limits,
 html:not(.preview-desktop) .dimensions{grid-template-columns:1fr 1fr}
+html:not(.preview-desktop) .profile-system{grid-template-columns:1fr}
 html:not(.preview-desktop) .radio-card{flex:1 1 100%}
 }
 @media(max-width:500px){
@@ -155,6 +156,7 @@ html:not(.preview-desktop) #languageSelect{width:100%;max-width:none;min-width:0
 html.preview-mobile .radio-group{grid-template-columns:1fr;}
 html.preview-mobile .limits,
 html.preview-mobile .dimensions{grid-template-columns:1fr 1fr;}
+html.preview-mobile .profile-system{grid-template-columns:1fr;}
 html.preview-mobile .radio-card{flex:1 1 100%;}
 html.preview-mobile #languageSelect{width:100%;max-width:none;min-width:0;display:block;}
 @media print{
