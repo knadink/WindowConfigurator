@@ -145,6 +145,12 @@ input[type=number]::-webkit-outer-spin-button{opacity:1;filter:brightness(0) sat
 .limits,.dimensions{grid-template-columns:1fr}
 .radio-card{flex:1 1 100%}
 }
+@media(max-width:500px){
+#languageSelect{width:100%;max-width:none;min-width:0;display:block;}
+.profile-system .cell{grid-template-columns:1fr;gap:.25rem 0;}
+.profile-system .cell span{white-space:normal;line-height:1.2;}
+.profile-system select{width:100%;min-width:0;}
+}
 @media print{
 @page{
     size: A4 landscape !important;
